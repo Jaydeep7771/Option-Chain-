@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* ── Synapse AI design tokens ──────────────────────────────────
+   Minimalist, premium, dark. Lots of negative space, soft shadows,
+   abstract color (cool blue → warm amber) instead of literal icons. */
+@theme {
+  --color-canvas: #07090f;
+  --color-surface: #0e121d;
+  --color-surface-2: #131826;
+  --color-border: #1e2536;
+  --color-ink: #e9ecf5;
+  --color-muted: #8b93a7;
+  --color-cool: #5b8cff;
+  --color-warm: #f5a623;
+  --color-accent: #8b7bff;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(91,140,255,.10), transparent 60%),
+    var(--color-canvas);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The synthesis card's slow breathing glow — the app's focal point. */
+@keyframes synapse-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(139,123,255,.35), 0 0 40px rgba(139,123,255,.18); }
+  50%      { box-shadow: 0 0 0 1px rgba(139,123,255,.55), 0 0 70px rgba(139,123,255,.30); }
+}
+.synapse-glow { animation: synapse-glow 4.5s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, #1b2236 50%, var(--color-surface-2) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite linear;
+}
