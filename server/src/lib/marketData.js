@@ -7,6 +7,8 @@
 // If the live fetch fails for any reason, we fall back to a static spot so
 // the demo never breaks.
 
+import { fetchOptionChain as fetchUpstoxChain } from "./upstox.js";
+
 const INDEX_MAP = {
   NIFTY: { yahoo: "^NSEI", label: "NIFTY", step: 50 },
   NIFTY50: { yahoo: "^NSEI", label: "NIFTY", step: 50 },
@@ -48,6 +50,35 @@ async function fetchSpot(yahooSymbol) {
   }
 }
 
+// Real daily closing prices (~3 months) for technical-trend analysis.
+// Falls back to a synthetic series so the trend engine always has data.
+export async function getHistoricalCloses(ticker = "NIFTY50") {
+  const sym = resolveSymbol(ticker);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym.yahoo)}?range=3mo&interval=1d`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, signal: ctrl.signal });
+    const json = await res.json();
+    const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+    const clean = (closes || []).filter((c) => typeof c === "number" && isFinite(c));
+    if (clean.length >= 50) return clean;
+  } catch {
+    /* fall through to synthetic */
+  } finally {
+    clearTimeout(timer);
+  }
+  // Synthetic ~60-session random walk (absolute level is irrelevant to RSI/EMA regime).
+  const base = sym.label === "BANKNIFTY" ? 57000 : sym.label === "SENSEX" ? 79000 : sym.step ? 24000 : 1000;
+  const out = [];
+  let p = base * 0.95;
+  for (let i = 0; i < 60; i++) {
+    p += (Math.random() - 0.44) * base * 0.01;
+    out.push(+p.toFixed(2));
+  }
+  return out;
+}
+
 // Build a realistic chain centered on the real spot.
 function buildChain(spot, step, strikes = 11) {
   const atm = Math.round(spot / step) * step;
@@ -68,6 +99,11 @@ function buildChain(spot, step, strikes = 11) {
 }
 
 export async function getOptionChain(ticker = "NIFTY50") {
+  // 1) Best: real option chain (real OI/IV) from Upstox, if logged in.
+  const real = await fetchUpstoxChain(ticker);
+  if (real) return real;
+
+  // 2) Next: real live spot from Yahoo, modeled OI around it.
   const sym = resolveSymbol(ticker);
   const live = await fetchSpot(sym.yahoo);
 

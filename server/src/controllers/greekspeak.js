@@ -1,7 +1,11 @@
 // ── Pipeline 1: GreekSpeak ──────────────────────────────────────────────
 // Turns the intimidating options-chain TABLE into one plain-English sentiment.
-// It computes two classic signals and a verdict:
-//   • Put-Call Ratio (PCR)  — > 1 means more puts (often bearish positioning)
+// It computes two classic signals and a verdict, following NSE convention:
+//   • Put-Call Ratio (PCR)
+//       PCR > 1.0  → heavy PUT writing → put writers expect support to hold
+//                    → BULLISH bias / strong support anchor.
+//       PCR < 1.0  → heavy CALL writing → call writers expect resistance to cap
+//                    → BEARISH bias / resistance overload.
 //   • Max Pain              — the strike where option buyers lose the most;
 //                             price often gravitates here near expiry.
 
@@ -30,15 +34,22 @@ export function computeSentiment(optionChain = getMockOptionChain()) {
     }
   }
 
-  // Translate the numbers into a sentence a human can read.
+  // NSE convention: PCR > 1 = put-writing dominance (bullish / support),
+  // PCR < 1 = call-writing dominance (bearish / resistance).
   let bias = "neutral";
-  if (pcr > 1.15) bias = "bearish";
-  else if (pcr < 0.85) bias = "bullish";
+  if (pcr > 1.1) bias = "bullish";
+  else if (pcr < 0.9) bias = "bearish";
+
+  const writerNote =
+    bias === "bullish"
+      ? "Put writers dominate, anchoring strong support."
+      : bias === "bearish"
+      ? "Call writers dominate, building a resistance wall overhead."
+      : "Call and put writing are balanced — no clear edge.";
 
   const summary =
-    `Options math on ${underlying} (spot ${spot}) reads ${bias.toUpperCase()}. ` +
-    `Put-Call Ratio is ${pcr} and Max Pain sits at ${maxPain}, ` +
-    `suggesting traders are positioned for a move toward ${maxPain}.`;
+    `Options positioning on ${underlying} (spot ${spot}) reads ${bias.toUpperCase()}. ` +
+    `Put-Call Ratio is ${pcr} with Max Pain at ${maxPain}. ${writerNote}`;
 
   return {
     underlying,
