@@ -2,7 +2,8 @@ import { Router } from "express";
 import { computeSentiment } from "../src/controllers/greekspeak.js";
 import { retrieveNews, refreshNews, getNewsFor } from "../src/controllers/alpharag.js";
 import { generateThesis } from "../src/controllers/synthesis.js";
-import { getOptionChain } from "../src/lib/marketData.js";
+import { answerFollowUp } from "../src/controllers/chat.js";
+import { getOptionChain, getQuotes } from "../src/lib/marketData.js";
 import { supabase, isSupabaseConfigured } from "../src/lib/supabase.js";
 import { getAuthUrl, exchangeCodeForToken, isConfigured, hasToken } from "../src/lib/upstox.js";
 
@@ -32,6 +33,13 @@ router.get("/upstox/callback", async (req, res) => {
 
 router.get("/upstox/status", (req, res) => {
   res.json({ configured: isConfigured(), connected: hasToken() });
+});
+
+// Live quotes for the ticker tape (?tickers=NIFTY50,BANKNIFTY,SENSEX,RELIANCE)
+router.get("/quotes", async (req, res) => {
+  const tickers = (req.query.tickers || "NIFTY50,BANKNIFTY,SENSEX,RELIANCE,TCS,INFY,HDFCBANK")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  res.json(await getQuotes(tickers));
 });
 
 // Pipeline 1 — just the options math/sentiment (?ticker=NIFTY50)
@@ -76,5 +84,16 @@ async function analyze(req, res) {
 
 router.post("/analyze", analyze); // matches the Phase 3 frontend
 router.post("/ask", analyze); // kept as an alias
+
+// Conversational follow-up about an existing thesis.
+router.post("/chat", async (req, res) => {
+  try {
+    const { ticker, context, messages } = req.body || {};
+    res.json(await answerFollowUp({ ticker, context, messages }));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Chat failed.", detail: err.message });
+  }
+});
 
 export default router;
