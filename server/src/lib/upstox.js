@@ -83,10 +83,21 @@ function authHeaders() {
   };
 }
 
+// The daily token expires ~3:30 AM IST. When the API rejects it (401), drop it
+// from the running process so /upstox/status honestly reports "disconnected"
+// and the UI can prompt a re-login instead of silently serving modeled OI.
+function invalidateToken() {
+  if (process.env.UPSTOX_ACCESS_TOKEN) {
+    delete process.env.UPSTOX_ACCESS_TOKEN;
+    console.warn("Upstox token expired/invalid — cleared. Visit /api/upstox/login to refresh.");
+  }
+}
+
 // Find the nearest expiry for an instrument.
 async function getNearestExpiry(instrumentKey) {
   const url = `https://api.upstox.com/v2/option/contract?instrument_key=${encodeURIComponent(instrumentKey)}`;
   const res = await fetch(url, { headers: authHeaders() });
+  if (res.status === 401) { invalidateToken(); return null; }
   const json = await res.json();
   const expiries = [...new Set((json.data || []).map((d) => d.expiry))].sort();
   return expiries[0] || null;
@@ -106,7 +117,7 @@ export async function fetchOptionChain(ticker = "NIFTY50") {
     const url = `https://api.upstox.com/v2/option/chain?instrument_key=${encodeURIComponent(instrumentKey)}&expiry_date=${expiry}`;
     const res = await fetch(url, { headers: authHeaders() });
     if (res.status === 401) {
-      console.warn("Upstox token expired — visit /api/upstox/login to refresh.");
+      invalidateToken();
       return null;
     }
     const json = await res.json();
@@ -140,6 +151,7 @@ export async function fetchOptionChain(ticker = "NIFTY50") {
       spot: +Number(spot).toFixed(2),
       changePct: null,
       source: "live-oi", // fully real: live spot + real open interest
+      oiModeled: false,
       expiry,
       generatedAt: new Date().toISOString(),
       chain: window,

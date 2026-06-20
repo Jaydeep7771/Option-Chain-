@@ -79,7 +79,24 @@ export async function getHistoricalCloses(ticker = "NIFTY50") {
   return out;
 }
 
+// Lightweight quotes for the ticker tape — live spot + % change only, no chain
+// build. Runs all symbols in parallel; nulls out anything the feed can't reach.
+export async function getQuotes(tickers = ["NIFTY50", "BANKNIFTY", "SENSEX"]) {
+  return Promise.all(
+    tickers.map(async (t) => {
+      const sym = resolveSymbol(t);
+      const live = await fetchSpot(sym.yahoo);
+      if (!live) return { ticker: t, label: sym.label, spot: null, changePct: null };
+      const changePct = +(((live.price - live.prevClose) / live.prevClose) * 100).toFixed(2);
+      return { ticker: t, label: sym.label, spot: +live.price.toFixed(2), changePct };
+    })
+  );
+}
+
 // Build a realistic chain centered on the real spot.
+// NOTE: this OI is MODELED, not real. It is intentionally UNBIASED — calls and
+// puts share the same base weighting so a modeled chain reads ~neutral (PCR≈1.0)
+// instead of inventing a directional verdict. Real OI requires Upstox (live-oi).
 function buildChain(spot, step, strikes = 11) {
   const atm = Math.round(spot / step) * step;
   const half = Math.floor(strikes / 2);
@@ -87,8 +104,9 @@ function buildChain(spot, step, strikes = 11) {
   for (let i = -half; i <= half; i++) {
     const strike = atm + i * step;
     const distance = Math.abs(i);
-    const callOI = Math.round((half - distance + 1) * 1500 + Math.random() * 800);
-    const putOI = Math.round((half - distance + 1) * 1700 + Math.random() * 800);
+    const base = (half - distance + 1) * 1600; // symmetric: no fabricated bull/bear tilt
+    const callOI = Math.round(base + Math.random() * 800);
+    const putOI = Math.round(base + Math.random() * 800);
     chain.push({
       strike,
       call: { oi: callOI, iv: +(12 + distance * 0.6 + Math.random()).toFixed(2) },
@@ -115,6 +133,7 @@ export async function getOptionChain(ticker = "NIFTY50") {
       spot: +live.price.toFixed(2),
       changePct,
       source: "live", // real spot from Yahoo Finance
+      oiModeled: true, // spot is live; open interest is modeled around it
       generatedAt: new Date().toISOString(),
       chain: buildChain(live.price, step),
     };
@@ -127,6 +146,7 @@ export async function getOptionChain(ticker = "NIFTY50") {
     spot: fallbackSpot,
     changePct: 0,
     source: "mock", // couldn't reach the live feed
+    oiModeled: true,
     generatedAt: new Date().toISOString(),
     chain: buildChain(fallbackSpot, sym.step || 100),
   };

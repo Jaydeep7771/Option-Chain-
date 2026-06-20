@@ -18,7 +18,7 @@ export function computeTrend(closes = []) {
       rsi: null,
       ema20: null,
       ema50: null,
-      technical_confluence: "Trend: Neutral · RSI: Healthy Momentum",
+      technical_confluence: "Trend: Neutral - RSI: Healthy Momentum",
     };
   }
 
@@ -51,6 +51,6 @@ export function computeTrend(closes = []) {
     rsi,
     ema20: ema20 != null ? +ema20.toFixed(1) : null,
     ema50: ema50 != null ? +ema50.toFixed(1) : null,
-    technical_confluence: `Trend: ${trend_status} · RSI: ${rsi_state}`,
+    technical_confluence: `Trend: ${trend_status} - RSI: ${rsi_state}`,
   };
 }
