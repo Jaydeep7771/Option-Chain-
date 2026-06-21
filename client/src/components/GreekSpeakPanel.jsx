@@ -93,6 +93,19 @@ export default function GreekSpeakPanel({ sentiment, chain = [] }) {
           </div>
         )}
 
+        {/* Implied-volatility read — real only on the live OI/IV feed */}
+        {!sentiment?.oiModeled && sentiment?.atmIV != null && (
+          <div className="mt-3 flex items-center justify-between rounded-md border hairline bg-white/[.02] px-3 py-2 text-[11px] mono">
+            <span className="text-[var(--color-muted)] uppercase tracking-[0.12em]">Volatility</span>
+            <span className="text-[var(--color-ink)]">
+              ATM IV {sentiment.atmIV} <span className="text-[var(--color-muted)]">({sentiment.volRegime})</span>
+            </span>
+            <span className={sentiment.ivSkew > 0.6 ? "text-down" : sentiment.ivSkew < -0.6 ? "text-up" : "text-[var(--color-muted)]"}>
+              {sentiment.ivSkewLabel}
+            </span>
+          </div>
+        )}
+
         {/* Open-interest profile — diverging bars */}
         {chain.length > 0 && (
           <div className="mt-7 pt-5 border-t hairline">

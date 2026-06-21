@@ -125,18 +125,22 @@ export async function fetchOptionChain(ticker = "NIFTY50") {
     if (!rows.length) return null;
 
     const spot = rows[0].underlying_spot_price;
+    // Keep the full Greeks Upstox returns (delta/gamma/theta/vega), not just IV —
+    // they power the IV-skew and volatility signals downstream.
+    const leg = (o) => {
+      const g = o?.option_greeks || {};
+      return {
+        oi: o?.market_data?.oi ?? 0,
+        volume: o?.market_data?.volume ?? 0,
+        iv: g.iv ?? 0,
+        delta: g.delta ?? null,
+        gamma: g.gamma ?? null,
+        theta: g.theta ?? null,
+        vega: g.vega ?? null,
+      };
+    };
     const chain = rows
-      .map((r) => ({
-        strike: r.strike_price,
-        call: {
-          oi: r.call_options?.market_data?.oi ?? 0,
-          iv: r.call_options?.option_greeks?.iv ?? 0,
-        },
-        put: {
-          oi: r.put_options?.market_data?.oi ?? 0,
-          iv: r.put_options?.option_greeks?.iv ?? 0,
-        },
-      }))
+      .map((r) => ({ strike: r.strike_price, call: leg(r.call_options), put: leg(r.put_options) }))
       .sort((a, b) => a.strike - b.strike);
 
     // Trim to ~11 strikes around ATM for a clean view.

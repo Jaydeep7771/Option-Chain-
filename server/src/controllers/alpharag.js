@@ -79,9 +79,11 @@ async function ingestToStore(items) {
 
   const { data: existing } = await supabase.from("news_articles").select("link").in("link", links);
   const seen = new Set((existing || []).map((e) => e.link));
-  // Free embedding tier allows 100 req/min — cap new items per cycle to stay
-  // under it (leftovers get picked up on the next refresh, dupes are skipped).
-  const fresh = items.filter((i) => i.link && !seen.has(i.link)).slice(0, 80);
+  // Cap new embeds per cycle to stay under the free DAILY embedding quota
+  // (gemini-embedding-001 = 1000/day). Hourly cycles × this cap keeps us well
+  // under it; leftovers get picked up next refresh, dupes are skipped.
+  const maxPerCycle = Number(process.env.NEWS_EMBED_CAP) || 25;
+  const fresh = items.filter((i) => i.link && !seen.has(i.link)).slice(0, maxPerCycle);
 
   const rows = [];
   for (const item of fresh) {

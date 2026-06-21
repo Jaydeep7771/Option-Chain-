@@ -66,6 +66,15 @@ export async function generateThesis(query, ticker = "NIFTY50") {
   const optionsVote = sentiment.oiModeled ? "neutral (modeled OI — low confidence)" : sentiment.bias;
   const trendVote =
     trend.trend_status === "Golden Cross" ? "bullish" : trend.trend_status === "Death Cross" ? "bearish" : "neutral";
+  // Volatility skew vote — only a real signal on the live OI/IV feed.
+  const ivVote =
+    sentiment.oiModeled || sentiment.ivSkew == null
+      ? "n/a (no live IV)"
+      : sentiment.ivSkew > 0.6
+      ? "bearish lean — puts bid (downside hedging)"
+      : sentiment.ivSkew < -0.6
+      ? "bullish lean — calls bid (upside demand)"
+      : "neutral — balanced skew";
   // Math vs price-action conflict is computable; news direction is left to the model.
   const quantConflict =
     !sentiment.oiModeled &&
@@ -93,15 +102,28 @@ ${
     : `- Open interest is from a LIVE feed (real OI/IV). You may treat the positioning read as high confidence.`
 }
 
+CONFLUENCE & CONVICTION RULE:
+- Weigh four signals: options positioning, price trend, volatility skew, and news. When 3 or more
+  agree in the same direction (and OI is live), state a DIRECTIONAL view with conviction and you may
+  set risk_level "Low" or "Moderate". When they conflict, do not force a directional call — say so
+  plainly and prefer a neutral / defined-risk stance with higher risk_level.
+- Do not water down a genuinely aligned setup into "neutral"; reserve neutral for genuinely mixed signals.
+
 QUANTITATIVE DATA${sentiment.oiModeled ? " (live spot; MODELED open interest)" : " (live options chain — real OI)"}:
 - Underlying: ${sentiment.underlying} | Spot: ${sentiment.spot}
 - Put-Call Ratio: ${sentiment.pcr} | Max Pain: ${sentiment.maxPain} (spot is ${sentiment.painPull === "balanced" ? "near" : sentiment.painPull === "downward" ? "above" : "below"} max pain → gravity ${sentiment.painPull})
 - OI-derived support ~${sentiment.support} | OI-derived resistance ~${sentiment.resistance}
-- Positioning bias: ${sentiment.bias} (confidence: ${sentiment.biasConfidence})
+- Positioning bias: ${sentiment.bias} (confidence: ${sentiment.biasConfidence})${
+    !sentiment.oiModeled && sentiment.ivSkew != null
+      ? `
+- Implied volatility: ATM IV ${sentiment.atmIV} (${sentiment.volRegime} regime) | IV skew ${sentiment.ivSkew} → ${sentiment.ivSkewLabel}`
+      : ""
+  }
 
 SIGNAL TABLE (each pillar's directional vote):
 - Options positioning: ${optionsVote}
 - Price trend (20/50-EMA): ${trendVote} — regime ${trend.trend_status}, momentum ${trend.rsi_state}${trend.rsi != null ? ` (RSI-14 ${trend.rsi})` : ""}
+- Volatility skew: ${ivVote}
 - News catalysts: (you judge from the headlines below)
 - Math-vs-trend check: ${quantConflict ? "CONFLICT between options bias and price trend" : "options bias and price trend are aligned or neutral"}
 
@@ -128,7 +150,9 @@ Produce an institutional-grade analysis as JSON matching the required schema. Ru
 - trading_thesis: 1-2 crisp sentences stating the core divergence (or alignment) across the three pillars.
 - suggested_strategy: a specific options strategy, e.g. "Bull Call Spread", "Iron Condor",
   "Bear Put Spread", "Long Straddle". For a conflicted/uncertain read prefer a defined-risk,
-  range, or volatility structure rather than a strong directional bet.
+  range, or volatility structure rather than a strong directional bet. Factor in the IV regime:
+  ELEVATED ATM IV favours premium-selling/defined-risk credit structures (e.g. credit spread,
+  iron condor); COMPRESSED IV favours long-volatility/debit structures (e.g. straddle, debit spread).
 - strategy_rationale: one sentence on why this derivative structure best fits the setup,
   referencing the support/resistance band where relevant.
 
@@ -149,34 +173,44 @@ fields in everyday language, no jargon, no abbreviations like PCR/OI/Max Pain):
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    // Default to flash for fast, reliable demos; set SYNTHESIS_MODEL=gemini-2.5-pro
-    // in server/.env for sharper reasoning at the cost of a little latency.
-    model: process.env.SYNTHESIS_MODEL || "gemini-2.5-flash",
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      temperature: 0.2, // low temperature → more deterministic, less embellishment
-    },
-  });
+  // Reasoning ladder (FREE-TIER friendly — no billing required). gemini-2.0-flash
+  // has a far higher free daily quota (~200/day) than 2.5-flash (~20/day) and is
+  // plenty capable here since the structured prompt does the heavy lifting; the
+  // lite model is the higher-quota fallback. Only drops to a data-derived read if
+  // BOTH models are unreachable. Override via SYNTHESIS_MODEL if you ever add billing.
+  const ladder = [
+    process.env.SYNTHESIS_MODEL || "gemini-2.0-flash",
+    process.env.SYNTHESIS_FALLBACK_MODEL || "gemini-2.0-flash-lite",
+  ];
 
-  // Retry on transient errors (503 high demand / 429 rate limit) so a brief
-  // Google hiccup never breaks the demo. If it still fails, fall back to a
-  // data-derived analysis object.
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const result = await model.generateContent(prompt);
-      const analysis = JSON.parse(result.response.text());
-      return { ...base, analysis };
-    } catch (err) {
-      const transient = err.status === 503 || err.status === 429;
-      if (!transient || attempt === 3) {
-        console.warn(`Gemini synthesis failed (${err.status || err.message}); using data-based fallback.`);
-        return { ...base, analysis: fallbackAnalysis(sentiment, trend, "AI engine momentarily unavailable."), aiFallback: true };
+  for (const modelName of ladder) {
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: 0.2, // low temperature → more deterministic, less embellishment
+      },
+    });
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await model.generateContent(prompt);
+        const analysis = JSON.parse(result.response.text());
+        return { ...base, analysis, model: modelName };
+      } catch (err) {
+        // 503 = transient overload → one quick retry. 429/quota or other → drop to
+        // the next model immediately rather than burning the long retry window.
+        if (err.status === 503 && attempt === 1) {
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        console.warn(`Synthesis via ${modelName} failed (${err.status || err.message}); falling through.`);
+        break;
       }
-      await new Promise((r) => setTimeout(r, attempt * 1200)); // brief backoff
     }
   }
+
+  return { ...base, analysis: fallbackAnalysis(sentiment, trend, "AI engine momentarily unavailable."), aiFallback: true };
 }
 
 // Data-derived analysis used only when the AI is unreachable, so the card

@@ -6,7 +6,9 @@ import { refreshNews } from "../controllers/alpharag.js";
 
 export function startNewsWorker() {
   refreshNews(); // run once immediately on boot
-  // then every 15 minutes
-  cron.schedule("*/15 * * * *", refreshNews);
-  console.log("🛰️  News worker scheduled (every 15 min).");
+  // Hourly by default (not every 15 min) to stay under the free embedding quota
+  // (gemini-embedding-001 = 1000/day). Override with NEWS_REFRESH_CRON if needed.
+  const schedule = process.env.NEWS_REFRESH_CRON || "0 * * * *";
+  cron.schedule(schedule, refreshNews);
+  console.log(`🛰️  News worker scheduled (cron: ${schedule}).`);
 }
