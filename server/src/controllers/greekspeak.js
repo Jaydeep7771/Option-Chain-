@@ -26,6 +26,19 @@ export function computeSentiment(optionChain = getMockOptionChain()) {
   const resistance = chain.reduce((best, r) => (r.call.oi > best.call.oi ? r : best), chain[0]);
   const support = chain.reduce((best, r) => (r.put.oi > best.put.oi ? r : best), chain[0]);
 
+  // ── Volatility signals from implied vol (real only on the live-oi feed) ──────
+  // ATM IV = the volatility regime; IV skew = put IV minus call IV, the options
+  // market's fear gauge (positive = downside hedging demand → bearish lean).
+  const atmRow = chain.reduce((best, r) => (Math.abs(r.strike - spot) < Math.abs(best.strike - spot) ? r : best), chain[0]);
+  const atmIV = atmRow ? +(((atmRow.call.iv || 0) + (atmRow.put.iv || 0)) / 2).toFixed(2) : null;
+  const avg = (xs) => (xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : 0);
+  const callIVs = chain.map((r) => r.call.iv).filter((v) => v > 0);
+  const putIVs = chain.map((r) => r.put.iv).filter((v) => v > 0);
+  const ivSkew = callIVs.length && putIVs.length ? +(avg(putIVs) - avg(callIVs)).toFixed(2) : null;
+  const ivSkewLabel =
+    ivSkew == null ? "n/a" : ivSkew > 0.6 ? "put skew (downside hedging)" : ivSkew < -0.6 ? "call skew (upside chase)" : "flat / balanced";
+  const volRegime = atmIV == null ? "n/a" : atmIV >= 20 ? "elevated" : atmIV <= 11 ? "compressed" : "normal";
+
   // Max Pain: for each candidate strike, sum the intrinsic value option
   // WRITERS would have to pay out; the minimum is the "pain" point.
   let maxPain = null;
@@ -67,10 +80,13 @@ export function computeSentiment(optionChain = getMockOptionChain()) {
     ? " Open interest is modeled (live OI feed not connected), so treat positioning as indicative, not confirmed."
     : "";
 
+  const ivNote =
+    !oiModeled && ivSkew != null ? ` Vol: ATM IV ${atmIV} (${volRegime}), ${ivSkewLabel}.` : "";
+
   const summary =
     `Options positioning on ${underlying} (spot ${spot}) reads ${bias.toUpperCase()}. ` +
     `Put-Call Ratio is ${pcr} with Max Pain at ${maxPain} (price gravity ${painPull}). ` +
-    `Support ~${support.strike}, resistance ~${resistance.strike}. ${writerNote}${confidenceNote}`;
+    `Support ~${support.strike}, resistance ~${resistance.strike}.${ivNote} ${writerNote}${confidenceNote}`;
 
   return {
     underlying,
@@ -81,6 +97,10 @@ export function computeSentiment(optionChain = getMockOptionChain()) {
     painPull,
     support: support.strike,
     resistance: resistance.strike,
+    atmIV,
+    ivSkew,
+    ivSkewLabel,
+    volRegime,
     bias,
     biasConfidence,
     oiModeled,
