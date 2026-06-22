@@ -177,36 +177,28 @@ fields in everyday language, no jargon, no abbreviations like PCR/OI/Max Pain):
   // has a far higher free daily quota (~200/day) than 2.5-flash (~20/day) and is
   // plenty capable here since the structured prompt does the heavy lifting; the
   // lite model is the higher-quota fallback. Only drops to a data-derived read if
-  // BOTH models are unreachable. Override via SYNTHESIS_MODEL if you ever add billing.
-  const ladder = [
-    process.env.SYNTHESIS_MODEL || "gemini-2.0-flash",
-    process.env.SYNTHESIS_FALLBACK_MODEL || "gemini-2.0-flash-lite",
-  ];
+  const modelName = process.env.SYNTHESIS_MODEL || "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      temperature: 0.2,
+    },
+  });
 
-  for (const modelName of ladder) {
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.2, // low temperature → more deterministic, less embellishment
-      },
-    });
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const result = await model.generateContent(prompt);
-        const analysis = JSON.parse(result.response.text());
-        return { ...base, analysis, model: modelName };
-      } catch (err) {
-        // 503 = transient overload → one quick retry. 429/quota or other → drop to
-        // the next model immediately rather than burning the long retry window.
-        if (err.status === 503 && attempt === 1) {
-          await new Promise((r) => setTimeout(r, 1000));
-          continue;
-        }
-        console.warn(`Synthesis via ${modelName} failed (${err.status || err.message}); falling through.`);
-        break;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const result = await model.generateContent(prompt);
+      const analysis = JSON.parse(result.response.text());
+      return { ...base, analysis, model: modelName };
+    } catch (err) {
+      if (err.status === 503 && attempt === 1) {
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
       }
+      console.warn(`Synthesis via ${modelName} failed (${err.status || err.message}).`);
+      break;
     }
   }
 

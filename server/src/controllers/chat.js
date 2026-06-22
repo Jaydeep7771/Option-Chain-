@@ -56,24 +56,18 @@ export async function answerFollowUp({ ticker, context, messages }) {
   }));
   const last = String(messages[messages.length - 1]?.content || "");
 
-  // Same free-tier reasoning ladder as synthesis (no billing required).
-  const ladder = [
-    process.env.SYNTHESIS_MODEL || "gemini-2.0-flash",
-    process.env.SYNTHESIS_FALLBACK_MODEL || "gemini-2.0-flash-lite",
-  ];
-  for (const modelName of ladder) {
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      systemInstruction: preamble,
-      generationConfig: { temperature: 0.3 },
-    });
-    try {
-      const chat = model.startChat({ history });
-      const result = await chat.sendMessage(last);
-      return { answer: result.response.text().trim(), model: modelName };
-    } catch (err) {
-      console.warn(`Follow-up via ${modelName} failed (${err.status || err.message}); falling through.`);
-    }
+  const modelName = process.env.SYNTHESIS_MODEL || "gemini-2.0-flash";
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: preamble,
+    generationConfig: { temperature: 0.3 },
+  });
+  try {
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessage(last);
+    return { answer: result.response.text().trim(), model: modelName };
+  } catch (err) {
+    console.warn(`Follow-up via ${modelName} failed (${err.status || err.message}).`);
   }
   return { answer: "The AI engine had a brief hiccup — try asking that again.", aiFallback: true };
 }
