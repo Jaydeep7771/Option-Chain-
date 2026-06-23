@@ -61,7 +61,7 @@ router.get("/gemini/test", async (req, res) => {
   if (!key || key.includes("your_")) return res.json({ ok: false, error: "GEMINI_API_KEY not set" });
   try {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent("Reply with just the word: OK");
     res.json({ ok: true, reply: result.response.text().trim(), keyPrefix: key.slice(0, 8) + "..." });
   } catch (err) {
