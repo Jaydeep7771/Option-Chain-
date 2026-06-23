@@ -177,7 +177,7 @@ fields in everyday language, no jargon, no abbreviations like PCR/OI/Max Pain):
   // has a far higher free daily quota (~200/day) than 2.5-flash (~20/day) and is
   // plenty capable here since the structured prompt does the heavy lifting; the
   // lite model is the higher-quota fallback. Only drops to a data-derived read if
-  const modelName = process.env.SYNTHESIS_MODEL || "gemini-2.0-flash";
+  const modelName = process.env.SYNTHESIS_MODEL || "gemini-1.5-flash";
   const model = genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {

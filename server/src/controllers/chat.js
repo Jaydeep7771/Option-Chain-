@@ -56,7 +56,7 @@ export async function answerFollowUp({ ticker, context, messages }) {
   }));
   const last = String(messages[messages.length - 1]?.content || "");
 
-  const modelName = process.env.SYNTHESIS_MODEL || "gemini-2.0-flash";
+  const modelName = process.env.SYNTHESIS_MODEL || "gemini-1.5-flash";
   const model = genAI.getGenerativeModel({
     model: modelName,
     systemInstruction: preamble,
